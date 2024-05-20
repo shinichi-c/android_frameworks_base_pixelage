@@ -18,6 +18,7 @@ package com.android.systemui.qs;
 
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.Intent;
 import android.text.TextUtils;
 import android.view.View;
 import android.widget.TextView;
@@ -41,6 +42,7 @@ public class QSFooterViewController extends ViewController<QSFooterView> impleme
 
     private final UserTracker mUserTracker;
     private final QSPanelController mQsPanelController;
+    private final TextView mUsageText;
     private final PageIndicator mPageIndicator;
     private final View mEditButton;
     private final FalsingManager mFalsingManager;
@@ -64,6 +66,7 @@ public class QSFooterViewController extends ViewController<QSFooterView> impleme
 
         mPageIndicator = mView.findViewById(R.id.footer_page_indicator);
         mEditButton = mView.findViewById(android.R.id.edit);
+        mUsageText = mView.findViewById(R.id.build);
     }
 
     @Override
@@ -74,6 +77,12 @@ public class QSFooterViewController extends ViewController<QSFooterView> impleme
             }
             mActivityStarter
                     .postQSRunnableDismissingKeyguard(() -> mQsPanelController.showEdit(view));
+        });
+        mUsageText.setOnClickListener(view -> {
+            Intent nIntent = new Intent(Intent.ACTION_MAIN);
+            nIntent.setClassName("com.android.settings",
+                    "com.android.settings.Settings$DataUsageSummaryActivity");
+            mActivityStarter.startActivity(nIntent, true /* dismissShade */);
         });
         mQsPanelController.setFooterPageIndicator(mPageIndicator);
         mView.updateEverything();
