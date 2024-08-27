@@ -183,4 +183,6 @@ class UdfpsView(
         }
         hbmProvider?.disableHbm(null /* onHbmDisabled */)
     }
+
+    fun setEnrolling(enrolling: Boolean) = ghbmView?.setEnrolling(enrolling)
 }
