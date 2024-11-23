@@ -68,10 +68,15 @@ public class AconfigFlags {
             return;
         }
         for (String fileName : sTextProtoFilesOnDevice) {
-            try (var inputStream = new FileInputStream(fileName)) {
-                loadAconfigDefaultValues(inputStream.readAllBytes());
-            } catch (IOException e) {
-                Slog.e(LOG_TAG, "Failed to read Aconfig values from " + fileName, e);
+            File f = new File(fileName);
+            if (f.isFile() && f.canRead()) {
+                try (FileInputStream inputStream = new FileInputStream(fileName)) {
+                    loadAconfigDefaultValues(inputStream.readAllBytes());
+                } catch (IOException e) {
+                    Slog.e(LOG_TAG, "Failed to read Aconfig values from " + fileName, e);
+                }
+            } else {
+                Slog.w(LOG_TAG, "No Aconfig flags at " + fileName);
             }
         }
         if (Process.myUid() == Process.SYSTEM_UID) {
