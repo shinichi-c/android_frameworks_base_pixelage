@@ -123,6 +123,7 @@ public class LockPatternView extends View {
     private static final String TAG = "LockPatternView";
 
     private OnPatternListener mOnPatternListener;
+    private ExternalHapticsPlayer mExternalHapticsPlayer;
     @UnsupportedAppUsage
     private ArrayList<Cell> mPattern = new ArrayList<Cell>(mPatternSize * mPatternSize);
 
@@ -324,6 +325,13 @@ public class LockPatternView extends View {
         void onPatternDetected(List<Cell> pattern, byte patternSize);
     }
 
+    /** An external haptics player for pattern updates. */
+    public interface ExternalHapticsPlayer{
+
+        /** Perform haptic feedback when a cell is added to the pattern. */
+        void performCellAddedFeedback();
+    }
+
     public LockPatternView(Context context) {
         this(context, null);
     }
@@ -518,6 +526,15 @@ public class LockPatternView extends View {
     public void setOnPatternListener(
             OnPatternListener onPatternListener) {
         mOnPatternListener = onPatternListener;
+    }
+
+    /**
+     * Set the external haptics player for feedback on pattern detection.
+     * @param player The external player.
+     */
+    @UnsupportedAppUsage
+    public void setExternalHapticsPlayer(ExternalHapticsPlayer player) {
+        mExternalHapticsPlayer = player;
     }
 
     /**
@@ -884,6 +901,16 @@ public class LockPatternView extends View {
             return cell;
         }
         return null;
+    }
+
+    @Override
+    public boolean performHapticFeedback(int feedbackConstant, int flags) {
+        if (mExternalHapticsPlayer != null) {
+            mExternalHapticsPlayer.performCellAddedFeedback();
+            return true;
+        } else {
+            return super.performHapticFeedback(feedbackConstant, flags);
+        }
     }
 
     private void addCellToPattern(Cell newCell) {

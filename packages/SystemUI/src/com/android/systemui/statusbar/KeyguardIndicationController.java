@@ -211,8 +211,8 @@ public class KeyguardIndicationController {
     protected boolean mPowerPluggedInWireless;
     protected boolean mPowerPluggedInDock;
     protected int mChargingSpeed;
+    protected boolean mPowerCharged;
 
-    private boolean mPowerCharged;
     /** Whether the battery defender is triggered. */
     private boolean mBatteryDefender;
     /** Whether the battery defender is triggered with the device plugged. */
@@ -406,15 +406,14 @@ public class KeyguardIndicationController {
         mStatusBarStateListener.onDozingChanged(mStatusBarStateController.isDozing());
     }
 
-    public void setIndicationAreaTop(ViewGroup indicationAreaTop) {
-        mFaceIconView = indicationAreaTop.findViewById(R.id.face_unlock_icon);
-        if (mFaceIconView != null) {
-            mFaceIconView.updateColor();
-        }
+    @Nullable
+    public ViewGroup getIndicationArea() {
+        return mIndicationArea;
     }
 
     public void setIndicationArea(ViewGroup indicationArea) {
         mIndicationArea = indicationArea;
+        mFaceIconView = indicationArea.findViewById(R.id.face_unlock_icon);
         mTopIndicationView = indicationArea.findViewById(R.id.keyguard_indication_text);
         mLockScreenIndicationView = indicationArea.findViewById(
                 R.id.keyguard_indication_text_bottom);
@@ -807,7 +806,8 @@ public class KeyguardIndicationController {
 
     private void updateLockScreenAdaptiveAuthMsg(int userId) {
         final boolean deviceLocked = mKeyguardUpdateMonitor.isDeviceLockedByAdaptiveAuth(userId);
-        if (deviceLocked) {
+        final boolean canSkipBouncer = mKeyguardUpdateMonitor.getUserCanSkipBouncer(userId);
+        if (deviceLocked && !canSkipBouncer) {
             mRotateTextViewController.updateIndication(
                     INDICATION_TYPE_ADAPTIVE_AUTH,
                     new KeyguardIndication.Builder()
@@ -1000,11 +1000,9 @@ public class KeyguardIndicationController {
         }
 
         if (TextUtils.equals(biometricMessage, mContext.getString(R.string.keyguard_face_successful_unlock))) {
-            updateFaceIconViewState(FaceUnlockImageView.State.SUCCESS);
+            mFaceIconView.setState(FaceUnlockImageView.State.SUCCESS);
         } else if (TextUtils.equals(biometricMessage, mContext.getString(R.string.keyguard_face_failed))) {
-            updateFaceIconViewState(FaceUnlockImageView.State.NOT_VERIFIED);
-        } else if (TextUtils.equals(biometricMessage, mContext.getString(R.string.face_unlock_recognizing))) {
-           updateFaceIconViewState(FaceUnlockImageView.State.SCANNING);
+            mFaceIconView.setState(FaceUnlockImageView.State.NOT_VERIFIED);
         }
 
         if (mBiometricMessageSource != null && biometricSourceType == null) {
@@ -1040,9 +1038,10 @@ public class KeyguardIndicationController {
     }
 
     private void showFaceUnlockRecognizingMessage() {
-        String faceUnlockMessage = mContext.getResources().getString(
-            R.string.face_unlock_recognizing);
-        showBiometricMessage(faceUnlockMessage, FACE);
+        mFaceIconView.setVisibility(View.VISIBLE);
+        mFaceIconView.setState(FaceUnlockImageView.State.SCANNING);
+        showBiometricMessage(mContext.getResources().getString(
+                                    R.string.face_unlock_recognizing), FACE);
     }
 
     private void hideFaceUnlockRecognizingMessage() {
@@ -1051,10 +1050,9 @@ public class KeyguardIndicationController {
         }
         String faceUnlockMessage = mContext.getResources().getString(
             R.string.face_unlock_recognizing);
-        if (mBiometricMessage != null && mBiometricMessage.equals(faceUnlockMessage)) {
+        if (mBiometricMessage != null && mBiometricMessage == faceUnlockMessage) {
             mBiometricMessage = null;
             hideBiometricMessage();
-            updateFaceIconViewState(FaceUnlockImageView.State.HIDDEN);
         }
     }
 
@@ -1148,14 +1146,15 @@ public class KeyguardIndicationController {
             String percentage = NumberFormat.getPercentInstance().format(mBatteryLevel / 100f);
             return mContext.getResources().getString(
                     R.string.keyguard_plugged_in_incompatible_charger, percentage);
-        } else if (mPowerCharged) {
-            return mContext.getResources().getString(R.string.keyguard_charged);
         }
 
         return computePowerChargingStringIndication();
     }
 
     protected String computePowerChargingStringIndication() {
+        if (mPowerCharged) {
+            return mContext.getResources().getString(R.string.keyguard_charged);
+        }
         final boolean hasChargingTime = mChargingTimeRemaining > 0;
         int chargingId;
         if (mPowerPluggedInWired) {
@@ -1325,7 +1324,7 @@ public class KeyguardIndicationController {
             mPowerPluggedInWired = status.isPluggedInWired() && isChargingOrFull;
             mPowerPluggedInWireless = status.isPluggedInWireless() && isChargingOrFull;
             mPowerPluggedInDock = status.isPluggedInDock() && isChargingOrFull;
-            mPowerPluggedIn = status.isPluggedIn() && isChargingOrFull;
+            mPowerPluggedIn = isPowerPluggedIn(status, isChargingOrFull);
             mPowerCharged = status.isCharged();
             mChargingWattage = status.maxChargingWattage;
             mChargingSpeed = status.getChargingSpeed(mContext);
@@ -1620,6 +1619,11 @@ public class KeyguardIndicationController {
         return status.isBatteryDefender();
     }
 
+    /** Return true if the device has power plugged in. */
+    protected boolean isPowerPluggedIn(BatteryStatus status, boolean isChargingOrFull) {
+        return status.isPluggedIn() && isChargingOrFull;
+    }
+
     private boolean isCurrentUser(int userId) {
         return getCurrentUser() == userId;
     }
@@ -1728,11 +1732,6 @@ public class KeyguardIndicationController {
     private final StatusBarStateController.StateListener mStatusBarStateListener =
             new StatusBarStateController.StateListener() {
         @Override
-        public void onStateChanged(int newState) {
-            setVisible(newState == StatusBarState.KEYGUARD);
-        }
-
-        @Override
         public void onDozingChanged(boolean dozing) {
             if (mDozing == dozing) {
                 return;
@@ -1746,12 +1745,6 @@ public class KeyguardIndicationController {
             updateDeviceEntryIndication(false);
         }
     };
-
-    private void updateFaceIconViewState(FaceUnlockImageView.State state) {
-        if (mFaceIconView != null) {
-            mFaceIconView.setState(state);
-        }
-    }
 
     private final KeyguardStateController.Callback mKeyguardStateCallback =
             new KeyguardStateController.Callback() {

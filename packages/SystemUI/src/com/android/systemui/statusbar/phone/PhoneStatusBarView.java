@@ -16,9 +16,6 @@
 
 package com.android.systemui.statusbar.phone;
 
-
-import static com.android.systemui.Flags.truncatedStatusBarIconsFix;
-
 import android.annotation.Nullable;
 import android.content.Context;
 import android.content.res.Configuration;
@@ -36,11 +33,12 @@ import android.view.accessibility.AccessibilityEvent;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
+import androidx.annotation.NonNull;
+
 import com.android.internal.policy.SystemBarUtils;
 import com.android.systemui.Dependency;
+import com.android.systemui.Flags;
 import com.android.systemui.Gefingerpoken;
-import com.android.systemui.plugins.DarkIconDispatcher;
-import com.android.systemui.plugins.DarkIconDispatcher.DarkReceiver;
 import com.android.systemui.res.R;
 import com.android.systemui.statusbar.phone.userswitcher.StatusBarUserSwitcherContainer;
 import com.android.systemui.statusbar.policy.Clock;
@@ -54,11 +52,8 @@ import java.util.Objects;
 
 public class PhoneStatusBarView extends FrameLayout {
     private static final String TAG = "PhoneStatusBarView";
-    private final StatusBarContentInsetsProvider mContentInsetsProvider;
     private final StatusBarWindowController mStatusBarWindowController;
 
-    private DarkReceiver mBattery;
-    private Clock mClock;
     private int mRotationOrientation = -1;
     @Nullable
     private View mCutoutSpace;
@@ -69,6 +64,10 @@ public class PhoneStatusBarView extends FrameLayout {
     private int mStatusBarHeight;
     @Nullable
     private Gefingerpoken mTouchEventHandler;
+    @Nullable
+    private HasCornerCutoutFetcher mHasCornerCutoutFetcher;
+    @Nullable
+    private InsetsFetcher mInsetsFetcher;
     private int mDensity;
     private float mFontScale;
     @Nullable
@@ -81,12 +80,21 @@ public class PhoneStatusBarView extends FrameLayout {
 
     public PhoneStatusBarView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        mContentInsetsProvider = Dependency.get(StatusBarContentInsetsProvider.class);
         mStatusBarWindowController = Dependency.get(StatusBarWindowController.class);
     }
 
     void setTouchEventHandler(Gefingerpoken handler) {
         mTouchEventHandler = handler;
+    }
+
+    void setHasCornerCutoutFetcher(@NonNull HasCornerCutoutFetcher cornerCutoutFetcher) {
+        mHasCornerCutoutFetcher = cornerCutoutFetcher;
+        updateCutoutLocation();
+    }
+
+    void setInsetsFetcher(@NonNull InsetsFetcher insetsFetcher) {
+        mInsetsFetcher = insetsFetcher;
+        updateSafeInsets();
     }
 
     void init(StatusBarUserChipViewModel viewModel) {
@@ -106,8 +114,6 @@ public class PhoneStatusBarView extends FrameLayout {
     @Override
     public void onFinishInflate() {
         super.onFinishInflate();
-        mBattery = findViewById(R.id.battery);
-        mClock = findViewById(R.id.clock);
         mCutoutSpace = findViewById(R.id.cutout_space_view);
         mStatusBarContents = (ViewGroup) findViewById(R.id.status_bar_contents);
 
@@ -117,22 +123,15 @@ public class PhoneStatusBarView extends FrameLayout {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        // Always have Battery meters in the status bar observe the dark/light modes.
-        Dependency.get(DarkIconDispatcher.class).addDarkReceiver(mBattery);
-        Dependency.get(DarkIconDispatcher.class).addDarkReceiver(mClock);
         if (updateDisplayParameters()) {
             updateLayoutForCutout();
-            if (truncatedStatusBarIconsFix()) {
-                updateWindowHeight();
-            }
+            updateWindowHeight();
         }
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
-        Dependency.get(DarkIconDispatcher.class).removeDarkReceiver(mBattery);
-        Dependency.get(DarkIconDispatcher.class).removeDarkReceiver(mClock);
         mDisplayCutout = null;
     }
 
@@ -149,13 +148,7 @@ public class PhoneStatusBarView extends FrameLayout {
             updateLayoutForCutout();
             requestLayout();
         }
-        if (truncatedStatusBarIconsFix()) {
-            updateWindowHeight();
-        }
-    }
-
-    void onDensityOrFontScaleChanged() {
-        mClock.onDensityOrFontScaleChanged();
+        updateWindowHeight();
     }
 
     @Override
@@ -236,8 +229,12 @@ public class PhoneStatusBarView extends FrameLayout {
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent event) {
-        mTouchEventHandler.onInterceptTouchEvent(event);
-        return super.onInterceptTouchEvent(event);
+        if (Flags.statusBarSwipeOverChip()) {
+            return mTouchEventHandler.onInterceptTouchEvent(event);
+        } else {
+            mTouchEventHandler.onInterceptTouchEvent(event);
+            return super.onInterceptTouchEvent(event);
+        }
     }
 
     public void updateResources() {
@@ -302,7 +299,14 @@ public class PhoneStatusBarView extends FrameLayout {
             return;
         }
 
-        boolean hasCornerCutout = mContentInsetsProvider.currentRotationHasCornerCutout();
+        boolean hasCornerCutout;
+        if (mHasCornerCutoutFetcher != null) {
+            hasCornerCutout = mHasCornerCutoutFetcher.fetchHasCornerCutout();
+        } else {
+            Log.e(TAG, "mHasCornerCutoutFetcher unexpectedly null");
+            hasCornerCutout = true;
+        }
+
         if (mDisplayCutout == null || mDisplayCutout.isEmpty() || hasCornerCutout) {
             mCutoutSpace.setVisibility(View.GONE);
             return;
@@ -320,8 +324,12 @@ public class PhoneStatusBarView extends FrameLayout {
     }
 
     private void updateSafeInsets() {
-        Insets insets = mContentInsetsProvider
-                .getStatusBarContentInsetsForCurrentRotation();
+        if (mInsetsFetcher == null) {
+            Log.e(TAG, "mInsetsFetcher unexpectedly null");
+            return;
+        }
+
+        Insets insets  = mInsetsFetcher.fetchInsets();
         setPadding(
                 insets.left,
                 insets.top,
@@ -330,6 +338,17 @@ public class PhoneStatusBarView extends FrameLayout {
     }
 
     private void updateWindowHeight() {
+        if (Flags.statusBarStopUpdatingWindowHeight()) {
+            return;
+        }
         mStatusBarWindowController.refreshStatusBarHeight();
+    }
+
+    interface HasCornerCutoutFetcher {
+        boolean fetchHasCornerCutout();
+    }
+
+    interface InsetsFetcher {
+        Insets fetchInsets();
     }
 }

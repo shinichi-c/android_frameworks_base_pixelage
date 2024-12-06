@@ -36,7 +36,6 @@ import com.android.settingslib.Utils
 import com.android.systemui.biometrics.AuthController
 import com.android.systemui.log.ScreenDecorationsLogger
 import com.android.systemui.plugins.statusbar.StatusBarStateController
-import com.android.systemui.statusbar.phone.FaceUnlockImageView
 import com.android.systemui.util.asIndenting
 import java.io.PrintWriter
 import java.util.concurrent.Executor
@@ -107,7 +106,6 @@ class FaceScanningOverlay(
         // Delay the relayout until the end of the animation when hiding,
         // otherwise we'd clip it.
         if (showScanningAnim) {
-            FaceUnlockImageView.setBouncerState(FaceUnlockImageView.State.SCANNING)
             visibility = View.VISIBLE
             requestLayout()
         }
@@ -158,9 +156,6 @@ class FaceScanningOverlay(
             })
         }
         rimAnimator?.start()
-        if (faceAuthSucceeded) {
-            FaceUnlockImageView.setBouncerState(FaceUnlockImageView.State.SUCCESS)
-        }
     }
 
     override fun updateVisOnUpdateCutout(): Boolean {

@@ -49,6 +49,7 @@ import android.os.VibrationAttributes;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.vibrator.persistence.VibrationXmlParser;
+import android.provider.Settings;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.ArrayMap;
@@ -59,8 +60,8 @@ import android.view.SurfaceControl;
 import android.view.WindowManager;
 
 import com.android.internal.annotations.VisibleForTesting;
+import com.android.server.crashrecovery.CrashRecoveryHelper;
 import com.android.server.LocalServices;
-import com.android.server.RescueParty;
 import com.android.server.statusbar.StatusBarManagerInternal;
 
 import java.io.File;
@@ -366,7 +367,7 @@ public final class ShutdownThread extends Thread {
             if (showSysuiReboot()) {
                 return null;
             } else if (!mRebootCustom) {
-                if (RescueParty.isRecoveryTriggeredReboot()) {
+                if (CrashRecoveryHelper.isRecoveryTriggeredReboot()) {
                     // We're not actually doing a factory reset yet; we're rebooting
                     // to ask the user if they'd like to reset, so give them a less
                     // scary dialog message.
@@ -802,6 +803,11 @@ public final class ShutdownThread extends Thread {
      */
     @VisibleForTesting // For testing vibrations without shutting down device
     void playShutdownVibration(Context context) {
+        if (mInjector.isShutdownVibrationDisabled(context)) {
+            Log.i(TAG, "Vibration disabled in config");
+            return;
+        }
+
         Vibrator vibrator = mInjector.getVibrator(context);
         if (!vibrator.hasVibrator()) {
             return;
@@ -978,6 +984,15 @@ public final class ShutdownThread extends Thread {
         public String getDefaultShutdownVibrationEffectFilePath(Context context) {
             return context.getResources().getString(
                     com.android.internal.R.string.config_defaultShutdownVibrationFile);
+        }
+
+        public boolean isShutdownVibrationDisabled(Context context) {
+            boolean disabledInConfig = context.getResources().getBoolean(
+                    com.android.internal.R.bool.config_disableShutdownVibrationInZen);
+            boolean isZenMode = Settings.Global.getInt(context.getContentResolver(),
+                    Settings.Global.ZEN_MODE, Settings.Global.ZEN_MODE_OFF)
+                    != Settings.Global.ZEN_MODE_OFF;
+            return disabledInConfig && isZenMode;
         }
     }
 }

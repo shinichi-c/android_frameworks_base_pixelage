@@ -49,6 +49,7 @@ import android.view.WindowInsets.Type.InsetsType;
 import android.view.WindowInsetsAnimation;
 import android.view.WindowInsetsAnimation.Bounds;
 import android.view.WindowManager;
+import android.view.inputmethod.ImeTracker;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Toast;
 
@@ -454,8 +455,9 @@ class InsetsPolicy {
         return originalState;
     }
 
-    void onRequestedVisibleTypesChanged(InsetsControlTarget caller) {
-        mStateController.onRequestedVisibleTypesChanged(caller);
+    void onRequestedVisibleTypesChanged(InsetsTarget caller,
+            @Nullable ImeTracker.Token statsToken) {
+        mStateController.onRequestedVisibleTypesChanged(caller, statsToken);
         checkAbortTransient(caller);
         updateBarControlTarget(mFocusedWin);
     }
@@ -468,7 +470,7 @@ class InsetsPolicy {
      *
      * @param caller who changed the insets state.
      */
-    private void checkAbortTransient(InsetsControlTarget caller) {
+    private void checkAbortTransient(InsetsTarget caller) {
         if (mShowingTransientTypes == 0) {
             return;
         }
@@ -521,13 +523,6 @@ class InsetsPolicy {
             // Notification shade has control anyways, no reason to force anything.
             return focusedWin;
         }
-        if (remoteInsetsControllerControlsSystemBars(focusedWin)) {
-            ComponentName component = focusedWin.mActivityRecord != null
-                    ? focusedWin.mActivityRecord.mActivityComponent : null;
-            mDisplayContent.mRemoteInsetsControlTarget.topFocusedWindowChanged(
-                    component, focusedWin.getRequestedVisibleTypes());
-            return mDisplayContent.mRemoteInsetsControlTarget;
-        }
         if (areTypesForciblyShowing(Type.statusBars())) {
             // Status bar is forcibly shown. We don't want the client to control the status bar, and
             // we will dispatch the real visibility of status bar to the client.
@@ -544,7 +539,17 @@ class InsetsPolicy {
                 && (notificationShade == null || !notificationShade.canReceiveKeys())) {
             // Non-fullscreen focused window should not break the state that the top-fullscreen-app
             // window hides status bar, unless the notification shade can receive keys.
-            return mPolicy.getTopFullscreenOpaqueWindow();
+            if (remoteInsetsControllerControlsSystemBars(
+                    mPolicy.getTopFullscreenOpaqueWindow())) {
+                notifyRemoteInsetsController(mPolicy.getTopFullscreenOpaqueWindow());
+                return mDisplayContent.mRemoteInsetsControlTarget;
+            } else {
+                return mPolicy.getTopFullscreenOpaqueWindow();
+            }
+        }
+        if (remoteInsetsControllerControlsSystemBars(focusedWin)) {
+            notifyRemoteInsetsController(focusedWin);
+            return mDisplayContent.mRemoteInsetsControlTarget;
         }
         return focusedWin;
     }
@@ -581,13 +586,6 @@ class InsetsPolicy {
                 return focusedWin;
             }
         }
-        if (remoteInsetsControllerControlsSystemBars(focusedWin)) {
-            ComponentName component = focusedWin.mActivityRecord != null
-                    ? focusedWin.mActivityRecord.mActivityComponent : null;
-            mDisplayContent.mRemoteInsetsControlTarget.topFocusedWindowChanged(
-                    component, focusedWin.getRequestedVisibleTypes());
-            return mDisplayContent.mRemoteInsetsControlTarget;
-        }
         if (areTypesForciblyShowing(Type.navigationBars())) {
             // Navigation bar is forcibly shown. We don't want the client to control the navigation
             // bar, and we will dispatch the real visibility of navigation bar to the client.
@@ -605,9 +603,29 @@ class InsetsPolicy {
                 && (notificationShade == null || !notificationShade.canReceiveKeys())) {
             // Non-fullscreen focused window should not break the state that the top-fullscreen-app
             // window hides navigation bar, unless the notification shade can receive keys.
-            return mPolicy.getTopFullscreenOpaqueWindow();
+            if (remoteInsetsControllerControlsSystemBars(
+                    mPolicy.getTopFullscreenOpaqueWindow())) {
+                notifyRemoteInsetsController(mPolicy.getTopFullscreenOpaqueWindow());
+                return mDisplayContent.mRemoteInsetsControlTarget;
+            } else {
+                return mPolicy.getTopFullscreenOpaqueWindow();
+            }
+        }
+        if (remoteInsetsControllerControlsSystemBars(focusedWin)) {
+            notifyRemoteInsetsController(focusedWin);
+            return mDisplayContent.mRemoteInsetsControlTarget;
         }
         return focusedWin;
+    }
+
+    private void notifyRemoteInsetsController(@Nullable WindowState win) {
+        if (win == null) {
+            return;
+        }
+        ComponentName component = win.mActivityRecord != null
+                ? win.mActivityRecord.mActivityComponent : null;
+        mDisplayContent.mRemoteInsetsControlTarget.topFocusedWindowChanged(
+                component, win.getRequestedVisibleTypes());
     }
 
     boolean areTypesForciblyShowing(@InsetsType int types) {
@@ -824,7 +842,8 @@ class InsetsPolicy {
         }
 
         @Override
-        public void updateRequestedVisibleTypes(int types) { }
+        public void updateRequestedVisibleTypes(int types, @Nullable ImeTracker.Token statsToken) {
+        }
 
         @Override
         public boolean hasAnimationCallbacks() {

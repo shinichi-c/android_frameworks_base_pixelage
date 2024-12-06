@@ -353,6 +353,7 @@ class MobileConnectionRepositoryImpl(
                     false
                 }
             }
+            .flowOn(bgDispatcher)
             .stateIn(scope, SharingStarted.WhileSubscribed(), false)
 
     override val carrierId =

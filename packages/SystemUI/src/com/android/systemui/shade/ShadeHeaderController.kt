@@ -43,7 +43,6 @@ import androidx.core.view.doOnLayout
 import com.android.app.animation.Interpolators
 import com.android.settingslib.Utils
 import com.android.systemui.Dumpable
-import com.android.systemui.Flags.centralizedStatusBarHeightFix
 import com.android.systemui.animation.ShadeInterpolation
 import com.android.systemui.battery.BatteryMeterView
 import com.android.systemui.battery.BatteryMeterViewController
@@ -202,6 +201,7 @@ constructor(
             if (qsVisible && field != value) {
                 header.alpha = ShadeInterpolation.getContentAlpha(value)
                 field = value
+                updateIgnoredSlots()
                 updateVisibility()
             }
         }
@@ -239,10 +239,12 @@ constructor(
     private val demoModeReceiver =
         object : DemoMode {
             override fun demoCommands() = listOf(DemoMode.COMMAND_CLOCK)
+
             override fun dispatchDemoCommand(command: String, args: Bundle) =
                 clock.dispatchDemoCommand(command, args)
 
             override fun onDemoModeStarted() = clock.onDemoModeStarted()
+
             override fun onDemoModeFinished() = clock.onDemoModeFinished()
         }
 
@@ -494,9 +496,7 @@ constructor(
             changes += combinedShadeHeadersConstraintManager.emptyCutoutConstraints()
         }
 
-        if (centralizedStatusBarHeightFix()) {
-            view.setPadding(view.paddingLeft, sbInsets.top, view.paddingRight, view.paddingBottom)
-        }
+        view.setPadding(view.paddingLeft, sbInsets.top, view.paddingRight, view.paddingBottom)
         view.updateAllConstraints(changes)
         updateBatteryMode()
     }
@@ -592,7 +592,7 @@ constructor(
 
     private fun updateIgnoredSlots() {
         // switching from QQS to QS state halfway through the transition
-        if (singleCarrier || qsExpandedFraction < 0.5) {
+        if (singleCarrier || (!largeScreenActive && qsExpandedFraction < 0.5)) {
             iconContainer.removeIgnoredSlots(carrierIconSlots)
         } else {
             iconContainer.addIgnoredSlots(carrierIconSlots)

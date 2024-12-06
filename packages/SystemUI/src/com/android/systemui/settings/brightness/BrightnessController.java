@@ -55,8 +55,12 @@ import com.android.settingslib.RestrictedLockUtils;
 import com.android.settingslib.RestrictedLockUtilsInternal;
 import com.android.systemui.Flags;
 import com.android.systemui.res.R;
+import com.android.systemui.brightness.shared.model.BrightnessLog;
 import com.android.systemui.dagger.qualifiers.Background;
 import com.android.systemui.dagger.qualifiers.Main;
+import com.android.systemui.log.LogBuffer;
+import com.android.systemui.log.core.LogLevel;
+import com.android.systemui.log.core.LogMessage;
 import com.android.systemui.settings.DisplayTracker;
 import com.android.systemui.settings.UserTracker;
 import com.android.systemui.util.settings.SecureSettings;
@@ -64,6 +68,8 @@ import com.android.systemui.util.settings.SecureSettings;
 import dagger.assisted.Assisted;
 import dagger.assisted.AssistedFactory;
 import dagger.assisted.AssistedInject;
+
+import kotlin.Unit;
 
 import java.util.concurrent.Executor;
 
@@ -97,6 +103,7 @@ public class BrightnessController implements ToggleSlider.Listener, MirroredBrig
     private final Executor mMainExecutor;
     private final Handler mBackgroundHandler;
     private final BrightnessObserver mBrightnessObserver;
+    private final LogBuffer mLogBuffer;
 
     private final DisplayTracker.Callback mBrightnessListener = new DisplayTracker.Callback() {
         @Override
@@ -150,14 +157,24 @@ public class BrightnessController implements ToggleSlider.Listener, MirroredBrig
         public void startObserving() {
             if (!mObserving) {
                 mObserving = true;
-                mSecureSettings.registerContentObserverForUserSync(
-                        BRIGHTNESS_MODE_URI,
-                        false, this, UserHandle.USER_ALL);
+                if (Flags.registerContentObserversAsync()) {
+                    mSecureSettings.registerContentObserverForUserAsync(
+                            BRIGHTNESS_MODE_URI,
+                            false, this, UserHandle.USER_ALL);
+                } else {
+                    mSecureSettings.registerContentObserverForUserSync(
+                            BRIGHTNESS_MODE_URI,
+                            false, this, UserHandle.USER_ALL);
+                }
             }
         }
 
         public void stopObserving() {
-            mSecureSettings.unregisterContentObserverSync(this);
+            if (Flags.registerContentObserversAsync()) {
+                mSecureSettings.unregisterContentObserverAsync(this);
+            } else {
+                mSecureSettings.unregisterContentObserverSync(this);
+            }
             mObserving = false;
         }
 
@@ -316,6 +333,7 @@ public class BrightnessController implements ToggleSlider.Listener, MirroredBrig
             DisplayTracker displayTracker,
             DisplayManager displayManager,
             SecureSettings secureSettings,
+            @BrightnessLog LogBuffer logBuffer,
             @Nullable IVrManager iVrManager,
             @Main Executor mainExecutor,
             @Main Looper mainLooper,
@@ -332,6 +350,7 @@ public class BrightnessController implements ToggleSlider.Listener, MirroredBrig
         mDisplayId = mContext.getDisplayId();
         mDisplayManager = displayManager;
         mVrManager = iVrManager;
+        mLogBuffer = logBuffer;
 
         mMainHandler = new Handler(mainLooper, mHandlerCallback);
         mBrightnessObserver = new BrightnessObserver(mMainHandler);
@@ -376,6 +395,7 @@ public class BrightnessController implements ToggleSlider.Listener, MirroredBrig
 
     @Override
     public void onChanged(boolean tracking, int value, boolean stopTracking) {
+        boolean starting = !mTrackingTouch && tracking;
         mTrackingTouch = tracking;
         if (mExternalChange) return;
 
@@ -403,14 +423,16 @@ public class BrightnessController implements ToggleSlider.Listener, MirroredBrig
 
         }
         setBrightness(valFloat);
-
+        if (starting) {
+            logBrightnessChange(mDisplayId, valFloat, true);
+        }
         // Give haptic feedback only if brightness is changed manually
-        if (mVibrator != null && tracking)
+        if (tracking)
             mVibrator.vibrate(BRIGHTNESS_SLIDER_HAPTIC);
-
         if (!tracking) {
             AsyncTask.execute(new Runnable() {
                     public void run() {
+                        logBrightnessChange(mDisplayId, valFloat, false);
                         mDisplayManager.setBrightness(mDisplayId, valFloat);
                     }
                 });
@@ -523,5 +545,21 @@ public class BrightnessController implements ToggleSlider.Listener, MirroredBrig
     public interface Factory {
         /** Create a {@link BrightnessController} */
         BrightnessController create(ImageView icon, ToggleSlider toggleSlider);
+    }
+
+    private void logBrightnessChange(int display, float value, boolean starting) {
+        mLogBuffer.log(
+                TAG,
+                LogLevel.DEBUG,
+                (LogMessage message) -> {
+                    message.setInt1(display);
+                    message.setDouble1(value);
+                    message.setBool1(starting);
+                    return Unit.INSTANCE;
+                },
+                (LogMessage message) -> "%s brightness set in display %d to %.3f".formatted(
+                        message.getBool1() ? "Starting" : "Finishing", message.getInt1(),
+                        message.getDouble1())
+        );
     }
 }
