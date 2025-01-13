@@ -113,6 +113,7 @@ import com.android.systemui.plugins.FalsingManager;
 import com.android.systemui.plugins.statusbar.StatusBarStateController;
 import com.android.systemui.res.R;
 import com.android.systemui.settings.UserTracker;
+import com.android.systemui.statusbar.phone.FaceUnlockImageView;
 import com.android.systemui.statusbar.phone.KeyguardBypassController;
 import com.android.systemui.statusbar.phone.KeyguardIndicationTextView;
 import com.android.systemui.statusbar.phone.StatusBarKeyguardViewManager;
@@ -149,6 +150,8 @@ public class KeyguardIndicationController {
 
     private static final int MSG_SHOW_ACTION_TO_UNLOCK = 1;
     private static final int MSG_RESET_ERROR_MESSAGE_ON_SCREEN_ON = 2;
+    private static final int MSG_SHOW_RECOGNIZING_FACE = 3;
+    private static final int MSG_HIDE_RECOGNIZING_FACE = 4;
     private static final long TRANSIENT_BIOMETRIC_ERROR_TIMEOUT = 1300;
     public static final long DEFAULT_MESSAGE_TIME = 3500;
     public static final long DEFAULT_HIDE_DELAY_MS =
@@ -164,6 +167,7 @@ public class KeyguardIndicationController {
     private final UserTracker mUserTracker;
     private final BouncerMessageInteractor mBouncerMessageInteractor;
     private ViewGroup mIndicationArea;
+    private FaceUnlockImageView mFaceIconView;
     private KeyguardIndicationTextView mTopIndicationView;
     private KeyguardIndicationTextView mLockScreenIndicationView;
     private final IBatteryStats mBatteryInfo;
@@ -223,6 +227,8 @@ public class KeyguardIndicationController {
     private final FaceHelpMessageDeferral mFaceAcquiredMessageDeferral;
     private boolean mInited;
 
+    private boolean mFaceDetectionRunning;
+
     private KeyguardUpdateMonitorCallback mUpdateMonitorCallback;
 
     private boolean mDozing;
@@ -263,6 +269,15 @@ public class KeyguardIndicationController {
                 // We want to keep this message around in case the screen was off
                 hideBiometricMessageDelayed(DEFAULT_HIDE_DELAY_MS);
                 mBiometricErrorMessageToShowOnScreenOn = null;
+            }
+        }
+
+        @Override
+        public void onScreenTurnedOff() {
+            if (mFaceDetectionRunning) {
+                mFaceDetectionRunning = false;
+                mBiometricErrorMessageToShowOnScreenOn = null;
+                hideFaceUnlockRecognizingMessage();
             }
         }
     };
@@ -352,6 +367,11 @@ public class KeyguardIndicationController {
                     showActionToUnlock();
                 } else if (msg.what == MSG_RESET_ERROR_MESSAGE_ON_SCREEN_ON) {
                     mBiometricErrorMessageToShowOnScreenOn = null;
+                } else if (msg.what == MSG_SHOW_RECOGNIZING_FACE) {
+                    mBiometricErrorMessageToShowOnScreenOn = null;
+                    showFaceUnlockRecognizingMessage();
+                } else if (msg.what == MSG_HIDE_RECOGNIZING_FACE) {
+                    hideFaceUnlockRecognizingMessage();
                 }
             }
         };
@@ -389,6 +409,13 @@ public class KeyguardIndicationController {
     @Nullable
     public ViewGroup getIndicationArea() {
         return mIndicationArea;
+    }
+
+    public void setIndicationAreaTop(ViewGroup indicationAreaTop) {
+        mFaceIconView = indicationAreaTop.findViewById(R.id.face_unlock_icon);
+        if (mFaceIconView != null) {
+            mFaceIconView.updateColor();
+        }
     }
 
     public void setIndicationArea(ViewGroup indicationArea) {
@@ -978,6 +1005,14 @@ public class KeyguardIndicationController {
             return;
         }
 
+        if (TextUtils.equals(biometricMessage, mContext.getString(R.string.keyguard_face_successful_unlock))) {
+            updateFaceIconViewState(FaceUnlockImageView.State.SUCCESS);
+        } else if (TextUtils.equals(biometricMessage, mContext.getString(R.string.keyguard_face_failed))) {
+            updateFaceIconViewState(FaceUnlockImageView.State.NOT_VERIFIED);
+        } else if (TextUtils.equals(biometricMessage, mContext.getString(R.string.face_unlock_recognizing))) {
+           updateFaceIconViewState(FaceUnlockImageView.State.SCANNING);
+        }
+
         if (mBiometricMessageSource != null && biometricSourceType == null) {
             // If there's a current biometric message showing and a non-biometric message
             // arrives, update the followup message with the non-biometric message.
@@ -1007,6 +1042,25 @@ public class KeyguardIndicationController {
             mBiometricMessageSource = null;
             mHideBiometricMessageHandler.cancel();
             updateBiometricMessage();
+        }
+    }
+
+    private void showFaceUnlockRecognizingMessage() {
+        String faceUnlockMessage = mContext.getResources().getString(
+            R.string.face_unlock_recognizing);
+        showBiometricMessage(faceUnlockMessage, FACE);
+    }
+
+    private void hideFaceUnlockRecognizingMessage() {
+        if (mFaceIconView != null) {
+            mFaceIconView.setVisibility(View.GONE);
+        }
+        String faceUnlockMessage = mContext.getResources().getString(
+            R.string.face_unlock_recognizing);
+        if (mBiometricMessage != null && mBiometricMessage.equals(faceUnlockMessage)) {
+            mBiometricMessage = null;
+            hideBiometricMessage();
+            updateFaceIconViewState(FaceUnlockImageView.State.HIDDEN);
         }
     }
 
@@ -1499,8 +1553,17 @@ public class KeyguardIndicationController {
         @Override
         public void onBiometricRunningStateChanged(boolean running,
                 BiometricSourceType biometricSourceType) {
-            if (!running && biometricSourceType == FACE) {
-                showTrustAgentErrorMessage(mTrustAgentErrorMessage);
+            if (biometricSourceType == BiometricSourceType.FACE) {
+                mFaceDetectionRunning = running;
+                if (running) {
+                    mHandler.removeMessages(MSG_HIDE_RECOGNIZING_FACE);
+                    mHandler.removeMessages(MSG_SHOW_RECOGNIZING_FACE);
+                    mHandler.sendEmptyMessageDelayed(MSG_SHOW_RECOGNIZING_FACE, 100);
+                } else {
+                    mHandler.removeMessages(MSG_SHOW_RECOGNIZING_FACE);
+                    mHandler.removeMessages(MSG_HIDE_RECOGNIZING_FACE);
+                    mHandler.sendEmptyMessageDelayed(MSG_HIDE_RECOGNIZING_FACE, 100);
+                }
             }
         }
 
@@ -1685,10 +1748,17 @@ public class KeyguardIndicationController {
 
             if (mDozing) {
                 hideBiometricMessage();
+                hideFaceUnlockRecognizingMessage();
             }
             updateDeviceEntryIndication(false);
         }
     };
+
+    private void updateFaceIconViewState(FaceUnlockImageView.State state) {
+        if (mFaceIconView != null) {
+            mFaceIconView.setState(state);
+        }
+    }
 
     private final KeyguardStateController.Callback mKeyguardStateCallback =
             new KeyguardStateController.Callback() {

@@ -849,6 +849,10 @@
     <protected-broadcast android:name="io.chaldeaprjkt.gamespace.action.GAME_START" />
     <protected-broadcast android:name="io.chaldeaprjkt.gamespace.action.GAME_STOP" />
 
+    <!-- App lock -->
+    <protected-broadcast android:name="com.android.server.app.AppLockManagerService.APP_LOCK_TIMEOUT" />
+    <protected-broadcast android:name="android.app.action.UNLOCK_APP" />
+
     <!-- ====================================================================== -->
     <!--                          RUNTIME PERMISSIONS                           -->
     <!-- ====================================================================== -->
@@ -8453,6 +8457,11 @@
     <permission android:name="android.permission.RESERVED_FOR_TESTING_SIGNATURE"
                 android:protectionLevel="signature"/>
 
+    <!-- Allows an application to manage app lock
+         @hide -->
+    <permission android:name="android.permission.MANAGE_APP_LOCK"
+                android:protectionLevel="signature|privileged" />
+
     <!-- Attribution for Geofencing service. -->
     <attribution android:tag="GeofencingService" android:label="@string/geofencing_service"/>
     <!-- Attribution for Country Detector. -->
@@ -8478,6 +8487,13 @@
     <!-- Attribution for Device Policy Manager service. -->
     <attribution android:tag="DevicePolicyManagerService"
         android:label="@string/device_policy_manager_service"/>
+
+    <!-- LineageHardware -->
+    <protected-broadcast android:name="lineageos.intent.action.INITIALIZE_LINEAGE_HARDWARE" />
+
+    <!-- @hide -->
+    <permission android:name="lineageos.permission.HARDWARE_ABSTRACTION_ACCESS"
+                android:protectionLevel="signature|privileged" />
 
     <application android:process="system"
                  android:persistent="true"

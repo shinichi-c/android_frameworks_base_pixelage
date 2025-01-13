@@ -157,6 +157,15 @@ constructor(
 
     private var overlayTouchListener: TouchExplorationStateChangeListener? = null
 
+    private val useFrameworkDimming = context.resources.getBoolean(
+        com.android.systemui.res.R.bool.config_udfpsFrameworkDimming
+    )
+    private val udfpsHelper: UdfpsHelper? = if (useFrameworkDimming) {
+        UdfpsHelper(context, windowManager, shadeInteractor, requestReason)
+    } else {
+        null
+    }
+
     private val coreLayoutParams =
         WindowManager.LayoutParams(
                 WindowManager.LayoutParams.TYPE_NAVIGATION_BAR_PANEL,
@@ -217,6 +226,7 @@ constructor(
                         (inflater.inflate(R.layout.udfps_touch_overlay, null, false)
                                 as UdfpsTouchOverlay)
                             .apply {
+                        setUdfpsDisplayModeProvider(udfpsDisplayModeProvider)
                                 // This view overlaps the sensor area
                                 // prevent it from being selectable during a11y
                                 if (requestReason.isImportantForAccessibility()) {
@@ -238,6 +248,7 @@ constructor(
                                             udfpsOverlayInteractor = udfpsOverlayInteractor,
                                         )
                                 }
+                        sensorRect = sensorBounds
                             }
                 } else {
                     overlayViewLegacy =
@@ -288,6 +299,7 @@ constructor(
     }
 
     private fun addViewNowOrLater(view: View, animation: UdfpsAnimationViewController<*>?) {
+        udfpsHelper?.addDimLayer()
         addViewRunnable =
             kotlinx.coroutines.Runnable {
                 Trace.setCounter("UdfpsAddView", 1)
@@ -315,6 +327,7 @@ constructor(
         DeviceEntryUdfpsRefactor.isUnexpectedlyInLegacyMode()
         overlayParams = updatedOverlayParams
         sensorBounds = updatedOverlayParams.sensorBounds
+        overlayTouchView?.sensorRect = updatedOverlayParams.sensorBounds
         getTouchOverlay()?.let {
             if (addViewRunnable == null) {
                 // Only updateViewLayout if there's no pending view to add to WM.
@@ -425,9 +438,15 @@ constructor(
             }
             animationViewController = null
         }
+        overlayTouchView?.apply {
+            if (isDisplayConfigured) {
+                unconfigureDisplay()
+            }
+        }
         if (DeviceEntryUdfpsRefactor.isEnabled) {
             udfpsDisplayModeProvider.disable(null)
         }
+        udfpsHelper?.removeDimLayer()
         getTouchOverlay()?.apply {
             if (this.parent != null) {
                 windowManager.removeView(this)

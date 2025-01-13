@@ -104,7 +104,7 @@
 
     <!-- Tiles native to System UI. Order should match "quick_settings_tiles_default" -->
     <string name="quick_settings_tiles_stock" translatable="false">
-        internet,bt,flashlight,dnd,alarm,airplane,controls,wallet,rotation,battery,cast,screenrecord,mictoggle,cameratoggle,location,hotspot,nfc,inversion,saver,dark,work,night,reverse,reduce_brightness,qr_code_scanner,onehanded,color_correction,dream,font_scaling,record_issue,hearing_devices,caffeine,dataswitch,heads_up,aod,usb_tether,autobrightness,sound,volume_panel,compass
+        internet,wifi,cell,bt,flashlight,dnd,alarm,airplane,controls,wallet,rotation,battery,cast,screenrecord,mictoggle,cameratoggle,location,hotspot,nfc,inversion,saver,dark,work,night,reverse,reduce_brightness,qr_code_scanner,onehanded,color_correction,dream,font_scaling,record_issue,hearing_devices,caffeine,dataswitch,heads_up,aod,usb_tether,autobrightness,sound,volume_panel,compass
     </string>
 
     <!-- The tiles to display in QuickSettings -->
@@ -323,6 +323,9 @@
 
     <!-- Whether to show the full screen user switcher. -->
     <bool name="config_enableFullscreenUserSwitcher">false</bool>
+
+    <!-- Whether to go to the launcher when unlocking via an occluding app -->
+    <bool name="config_goToHomeFromOccludedApps">false</bool>
 
     <!-- Determines whether the shell features all run on another thread. -->
     <bool name="config_enableShellMainThread">true</bool>

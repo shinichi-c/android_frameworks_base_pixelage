@@ -53,7 +53,7 @@ constructor(
             connect(
                 R.id.keyguard_slice_view,
                 ConstraintSet.START,
-                ConstraintSet.PARENT_ID,
+                R.id.lockscreen_clock_view,
                 ConstraintSet.START
             )
             connect(
@@ -80,10 +80,5 @@ constructor(
         }
     }
 
-    override fun removeViews(constraintLayout: ConstraintLayout) {
-        if (!MigrateClocksToBlueprint.isEnabled) return
-        if (smartspaceController.isEnabled) return
-
-        constraintLayout.removeView(R.id.keyguard_slice_view)
-    }
+    override fun removeViews(constraintLayout: ConstraintLayout) {}
 }

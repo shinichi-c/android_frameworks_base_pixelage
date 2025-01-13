@@ -121,6 +121,7 @@ import com.android.server.adb.AdbService;
 import com.android.server.alarm.AlarmManagerService;
 import com.android.server.am.ActivityManagerService;
 import com.android.server.ambientcontext.AmbientContextManagerService;
+import com.android.server.app.AppLockManagerService;
 import com.android.server.app.GameManagerService;
 import com.android.server.appbinding.AppBindingService;
 import com.android.server.appfunctions.AppFunctionManagerService;
@@ -178,6 +179,7 @@ import com.android.server.inputmethod.InputMethodManagerService;
 import com.android.server.integrity.AppIntegrityManagerService;
 import com.android.server.job.JobSchedulerService;
 import com.android.server.lights.LightsService;
+import com.android.server.lineage.LineageHardwareService;
 import com.android.server.locales.LocaleManagerService;
 import com.android.server.location.LocationManagerService;
 import com.android.server.location.altitude.AltitudeService;
@@ -1733,6 +1735,10 @@ public final class SystemServer implements Dumpable {
             mSystemServiceManager.startService(LogcatManagerService.class);
             t.traceEnd();
 
+            t.traceBegin("StartSmart5gService");
+            mSystemServiceManager.startService(Smart5gService.class);
+            t.traceEnd();
+
             if (AppFunctionManagerConfiguration.isSupported(context)) {
                 t.traceBegin("StartAppFunctionManager");
                 mSystemServiceManager.startService(AppFunctionManagerService.class);
@@ -2624,6 +2630,10 @@ public final class SystemServer implements Dumpable {
                 t.traceEnd();
             }
 
+            t.traceBegin("AppLockManagerService");
+            mSystemServiceManager.startService(AppLockManagerService.Lifecycle.class);
+            t.traceEnd();
+
             if (!isWatch) {
                 // We don't run this on watches as there are no plans to use the data logged
                 // on watch devices.
@@ -2683,6 +2693,10 @@ public final class SystemServer implements Dumpable {
             // Lineage Health
             t.traceBegin("StartHealthService");
             mSystemServiceManager.startService(HealthInterfaceService.class);
+
+            // LineageHardware
+            t.traceBegin("StartLineageHardwareService");
+            mSystemServiceManager.startService(LineageHardwareService.class);
             t.traceEnd();
 
             if (!com.android.server.flags.Flags.optionalBackgroundInstallControl()
