@@ -462,5 +462,6 @@ public class GlobalSettingsValidators {
                 Global.Wearable.PHONE_SWITCHING_REQUEST_SOURCE_NONE,
                 Global.Wearable.PHONE_SWITCHING_REQUEST_SOURCE_COMPANION
         ));
+        VALIDATORS.put(Global.USER_MIN_AUTO_BRIGHTNESS, new InclusiveIntegerRangeValidator(0, 100));
     }
 }

@@ -31,19 +31,24 @@ import android.app.TaskStackListener;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.database.ContentObserver;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.hardware.display.BrightnessConfiguration;
+import android.hardware.display.BrightnessInfo;
 import android.hardware.display.DisplayManagerInternal.DisplayPowerRequest;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.os.Trace;
+import android.provider.Settings;
 import android.util.EventLog;
 import android.util.IndentingPrintWriter;
 import android.util.MathUtils;
@@ -108,6 +113,19 @@ public class AutomaticBrightnessController {
     private static final int MSG_UPDATE_FOREGROUND_APP_SYNC = 5;
     private static final int MSG_RUN_UPDATE = 6;
     private static final int MSG_INVALIDATE_PAUSED_SHORT_TERM_MODEL = 7;
+
+    // values used to convert between gamma and linear
+    private static final boolean mUsesLowGamma = Boolean.parseBoolean(
+            SystemProperties.get("persist.sys.brightness.low.gamma", "false"));
+    private static final int GAMMA_SPACE_MIN = 0;
+    private static final int GAMMA_SPACE_MAX = mUsesLowGamma ? 255 : 65535;
+    // Hybrid Log Gamma constant values
+    private static final float R = 0.5f;
+    private static final float A = 0.17883277f;
+    private static final float B = 0.28466892f;
+    private static final float C = 0.55991073f;
+    private float mBrightnessMin = PowerManager.BRIGHTNESS_MIN;
+    private float mBrightnessMax = PowerManager.BRIGHTNESS_MAX;
 
     // Callbacks for requesting updates to the display's power state
     private final Callbacks mCallbacks;
@@ -287,6 +305,9 @@ public class AutomaticBrightnessController {
 
     private boolean mAutoBrightnessOneShot;
 
+    private final SettingsObserver mSettingsObserver;
+    private int mUserMinBrightness = 0;
+
     AutomaticBrightnessController(Callbacks callbacks, Looper looper,
             SensorManager sensorManager, Sensor lightSensor,
             SparseArray<BrightnessMappingStrategy> brightnessMappingStrategyMap,
@@ -382,6 +403,15 @@ public class AutomaticBrightnessController {
         if (userNits != BrightnessMappingStrategy.INVALID_NITS) {
             setScreenBrightnessByUser(userLux, getBrightnessFromNits(userNits));
         }
+
+        final BrightnessInfo info = mContext.getDisplay().getBrightnessInfo();
+        if (info != null) {
+            mBrightnessMin = info.brightnessMinimum;
+            mBrightnessMax = info.brightnessMaximum;
+        }
+
+        mSettingsObserver = new SettingsObserver(mHandler);
+        mSettingsObserver.updateAll();
     }
 
     /**
@@ -482,6 +512,13 @@ public class AutomaticBrightnessController {
             updateAutoBrightness(false /*sendUpdate*/, userInitiatedChange);
         } else {
             handleSettingsChange(autoBrightnessOneShot);
+        }
+
+        if (enable) {
+            mSettingsObserver.observe();
+            mSettingsObserver.updateAll();
+        } else {
+            mSettingsObserver.stop();
         }
     }
 
@@ -1023,6 +1060,13 @@ public class AutomaticBrightnessController {
                         + "mScreenAutoBrightness=" + mScreenAutoBrightness + ", "
                         + "newScreenAutoBrightness=" + newScreenAutoBrightness);
             }
+            if (!isManuallySet && mUserMinBrightness > 0) {
+                final int gamma = Math.round(GAMMA_SPACE_MIN +
+                        (mUserMinBrightness / 100f) * (GAMMA_SPACE_MAX - GAMMA_SPACE_MIN));
+                final float userLinearBrightness = convertGammaToLinearFloat(gamma,
+                        mBrightnessMin, mBrightnessMax);
+                newScreenAutoBrightness = Math.max(userLinearBrightness, newScreenAutoBrightness);
+            }
             if (!withinThreshold) {
                 mPreThresholdBrightness = mScreenAutoBrightness;
             }
@@ -1049,6 +1093,24 @@ public class AutomaticBrightnessController {
         if (mAutoBrightnessOneShot) {
             mSensorManager.unregisterListener(mLightSensorListener);
         }
+    }
+
+    private static final float convertGammaToLinearFloat(int val, float min, float max) {
+        final float normalizedVal = MathUtils.norm(GAMMA_SPACE_MIN, GAMMA_SPACE_MAX, val);
+        final float ret;
+        if (normalizedVal <= R) {
+            ret = MathUtils.sq(normalizedVal / R);
+        } else {
+            ret = MathUtils.exp((normalizedVal - C) / A) + B;
+        }
+
+        // HLG is normalized to the range [0, 12], ensure that value is within that range,
+        // it shouldn't be out of bounds.
+        final float normalizedRet = MathUtils.constrain(ret, 0, 12);
+
+        return mUsesLowGamma
+                ? MathUtils.constrain(BrightnessSynchronizer.brightnessIntToFloat(val), min, max)
+                : MathUtils.lerp(min, max, normalizedRet / 12);
     }
 
     // Clamps values with float range [0.0-1.0]
@@ -1427,6 +1489,41 @@ public class AutomaticBrightnessController {
             // Not used.
         }
     };
+
+    private class SettingsObserver extends ContentObserver {
+        SettingsObserver(Handler handler) {
+            super(handler);
+        }
+
+        void observe() {
+            updateUserMinBrightness();
+            mContext.getContentResolver().registerContentObserver(
+                    Settings.Global.getUriFor(Settings.Global.USER_MIN_AUTO_BRIGHTNESS),
+                            false, this);
+        }
+
+        void stop() {
+            mContext.getContentResolver().unregisterContentObserver(this);
+        }
+
+        void updateAll() {
+            updateUserMinBrightness();
+        }
+
+        @Override
+        public void onChange(boolean selfChange, Uri uri) {
+            switch (uri.getLastPathSegment()) {
+                case Settings.Global.USER_MIN_AUTO_BRIGHTNESS:
+                    updateUserMinBrightness();
+                    break;
+            }
+        }
+
+        private void updateUserMinBrightness() {
+            mUserMinBrightness = Settings.Global.getInt(mContext.getContentResolver(),
+                    Settings.Global.USER_MIN_AUTO_BRIGHTNESS, 0);
+        }
+    }
 
     // Call back whenever the tasks stack changes, which includes tasks being created, removed, and
     // moving to top.
