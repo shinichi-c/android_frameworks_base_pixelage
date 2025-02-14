@@ -165,6 +165,7 @@ import com.android.server.criticalevents.CriticalEventLog;
 import com.android.server.devicepolicy.DevicePolicyManagerService;
 import com.android.server.devicestate.DeviceStateManagerService;
 import com.android.server.display.DisplayManagerService;
+import com.android.server.display.FreeformService;
 import com.android.server.display.color.ColorDisplayService;
 import com.android.server.dreams.DreamManagerService;
 import com.android.server.emergency.EmergencyAffordanceService;
@@ -207,6 +208,7 @@ import com.android.server.os.SchedulingPolicyService;
 import com.android.server.pdb.PersistentDataBlockService;
 import com.android.server.people.PeopleService;
 import com.android.server.permission.access.AccessCheckingService;
+import com.android.server.pixelage.AttestationService;
 import com.android.server.pixelage.CustomDeviceConfigService;
 import com.android.server.pm.ApexManager;
 import com.android.server.pm.ApexSystemServiceInfo;
@@ -2635,6 +2637,10 @@ public final class SystemServer implements Dumpable {
             mSystemServiceManager.startService(AppLockManagerService.Lifecycle.class);
             t.traceEnd();
 
+            t.traceBegin("FreeformService");
+            mSystemServiceManager.startService(FreeformService.class);
+            t.traceEnd();
+
             if (!isWatch) {
                 // We don't run this on watches as there are no plans to use the data logged
                 // on watch devices.
@@ -2712,6 +2718,11 @@ public final class SystemServer implements Dumpable {
                 mSystemServiceManager.startService(BackgroundInstallControlService.class);
                 t.traceEnd();
             }
+
+            // AttestationService
+            t.traceBegin("AttestationService");
+            mSystemServiceManager.startService(AttestationService.class);
+            t.traceEnd();
         }
 
         t.traceBegin("StartMediaProjectionManager");
